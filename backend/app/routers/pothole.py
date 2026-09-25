@@ -30,6 +30,12 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/stats", response_model=dict[str, float | int])
+def get_stats() -> dict[str, float | int]:
+    """汇总修补单指标，工程量与列表、详情共用同一折算口径。"""
+    return service.summary()
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条修补单明细；不存在时给出可读的错误说明。"""

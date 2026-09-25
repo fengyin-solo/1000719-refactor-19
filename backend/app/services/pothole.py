@@ -1,8 +1,10 @@
 """坑槽修补业务规则：状态流转、字段校验与筛选口径都收在这里。"""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
+from app.services.repair_quantity import total_repair_quantity, with_repair_quantity
 from app.store import store
 
 MODULE = "pothole"
@@ -28,10 +30,25 @@ class PotholeService:
             rows = [row for row in rows if row.get("status") == status]
         total = len(rows)
         start = max(page - 1, 0) * size
-        return rows[start:start + size], total
+        page_rows = [with_repair_quantity(row) for row in rows[start:start + size]]
+        return page_rows, total
 
     def get_entry(self, entry_id: int) -> dict[str, Any] | None:
-        return store.find(MODULE, entry_id)
+        entry = store.find(MODULE, entry_id)
+        return with_repair_quantity(entry) if entry is not None else None
+
+    def summary(self) -> dict[str, Any]:
+        rows = store.rows(MODULE)
+        current_month = date.today().strftime("%Y-%m")
+        month_rows = [
+            row for row in rows
+            if str(row.get("完成日期") or "").startswith(current_month)
+        ]
+        return {
+            "待安排修补": sum(1 for row in rows if row.get("status") == STATUS_ORDER[0]),
+            "本月修补面积": total_repair_quantity(month_rows),
+            "取消单数": sum(1 for row in rows if row.get("status") == STATUS_ORDER[-1]),
+        }
 
     def create_entry(self, values: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
         missing = [field for field in REQUIRED_FIELDS if not str(values.get(field) or "").strip()]
@@ -44,7 +61,7 @@ class PotholeService:
         entry["pending"] = True
         entry["abnormal"] = False
         rows.append(entry)
-        return entry, []
+        return with_repair_quantity(entry), []
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         entry = store.find(MODULE, entry_id)
@@ -58,4 +75,4 @@ class PotholeService:
         entry["status"] = target
         entry["pending"] = target != STATUS_ORDER[-1]
         entry["abnormal"] = action in NEGATIVE_ACTIONS
-        return entry, f"修补单已{action}"
+        return with_repair_quantity(entry), f"修补单已{action}"
